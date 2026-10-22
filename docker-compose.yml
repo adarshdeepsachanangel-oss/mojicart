@@ -1,0 +1,34 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mojicart-web
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://mojicart_admin:super_secure_pg_pass_2026@postgres:5432/mojicart?schema=public
+      - JWT_SECRET=mojicart_production_jwt_secret_token_2026_xyz
+      - NEXT_PUBLIC_APP_URL=https://mojicart.in
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: mojicart-db
+    restart: always
+    environment:
+      POSTGRES_USER: mojicart_admin
+      POSTGRES_PASSWORD: super_secure_pg_pass_2026
+      POSTGRES_DB: mojicart
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
