@@ -39,8 +39,8 @@ export default function Footer() {
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <p className="font-bold text-white text-sm">100% Secure Payments</p>
-              <p className="text-slate-400 text-xs">UPI, Cards, NetBanking & COD</p>
+              <p className="font-bold text-white text-sm">100% Safe Delivery</p>
+              <p className="text-slate-400 text-xs">Cash on Delivery & Pay at Doorstep</p>
             </div>
           </div>
 
@@ -113,10 +113,8 @@ export default function Footer() {
           {/* Secure Payment Badges */}
           <div className="flex items-center gap-3 text-slate-400 text-xs">
             <span className="flex items-center gap-1 font-medium"><Lock className="w-3.5 h-3.5 text-emerald-400" /> 256-Bit SSL Encrypted</span>
-            <span className="px-2 py-0.5 bg-slate-800 rounded font-semibold text-slate-200">UPI</span>
-            <span className="px-2 py-0.5 bg-slate-800 rounded font-semibold text-slate-200">RuPay</span>
-            <span className="px-2 py-0.5 bg-slate-800 rounded font-semibold text-slate-200">Razorpay</span>
-            <span className="px-2 py-0.5 bg-slate-800 rounded font-semibold text-slate-200">COD</span>
+            <span className="px-2 py-0.5 bg-slate-800 rounded font-semibold text-slate-200">Cash on Delivery</span>
+            <span className="px-2 py-0.5 bg-slate-800 rounded font-semibold text-slate-200">UPI on Delivery</span>
           </div>
         </div>
       </div>

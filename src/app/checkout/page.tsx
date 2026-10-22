@@ -399,11 +399,7 @@ function CheckoutContent() {
             <div className="space-y-3">
               {/* Cash on Delivery */}
               <label
-                className={`block p-4 rounded-xl border cursor-pointer transition ${
-                  paymentMethod === "COD"
-                    ? "border-amber-500 bg-amber-50/40 ring-1 ring-amber-500"
-                    : "border-slate-200 hover:border-slate-300"
-                }`}
+                className="block p-4 rounded-xl border border-amber-500 bg-amber-50/40 ring-1 ring-amber-500 cursor-pointer"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -420,7 +416,7 @@ function CheckoutContent() {
                         Cash on Delivery (Pay with Cash / UPI on Delivery)
                       </p>
                       <p className="text-[11px] text-slate-500">
-                        Pay when your verified courier delivers the package at your doorstep
+                        Pay cash or scan courier QR code using any UPI app (GPay, PhonePe, Paytm) upon package arrival
                       </p>
                     </div>
                   </div>
@@ -430,61 +426,10 @@ function CheckoutContent() {
                 </div>
               </label>
 
-              {/* UPI Online Payment */}
-              <label
-                className={`block p-4 rounded-xl border cursor-pointer transition ${
-                  paymentMethod === "UPI"
-                    ? "border-amber-500 bg-amber-50/40 ring-1 ring-amber-500"
-                    : "border-slate-200 hover:border-slate-300"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <input
-                    type="radio"
-                    name="paymentMethod"
-                    value="UPI"
-                    checked={paymentMethod === "UPI"}
-                    onChange={() => setPaymentMethod("UPI")}
-                    className="text-amber-500 focus:ring-amber-500"
-                  />
-                  <div>
-                    <p className="font-bold text-xs text-slate-900">
-                      UPI (Google Pay, PhonePe, Paytm, BHIM)
-                    </p>
-                    <p className="text-[11px] text-slate-500">
-                      Instant zero-touch payment via your smartphone UPI app
-                    </p>
-                  </div>
-                </div>
-              </label>
-
-              {/* Razorpay Online Cards & Net Banking */}
-              <label
-                className={`block p-4 rounded-xl border cursor-pointer transition ${
-                  paymentMethod === "RAZORPAY"
-                    ? "border-amber-500 bg-amber-50/40 ring-1 ring-amber-500"
-                    : "border-slate-200 hover:border-slate-300"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <input
-                    type="radio"
-                    name="paymentMethod"
-                    value="RAZORPAY"
-                    checked={paymentMethod === "RAZORPAY"}
-                    onChange={() => setPaymentMethod("RAZORPAY")}
-                    className="text-amber-500 focus:ring-amber-500"
-                  />
-                  <div>
-                    <p className="font-bold text-xs text-slate-900">
-                      Credit / Debit Card / Net Banking (Razorpay Secure)
-                    </p>
-                    <p className="text-[11px] text-slate-500">
-                      Supports Visa, MasterCard, RuPay, and all major Indian banks
-                    </p>
-                  </div>
-                </div>
-              </label>
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>100% Risk-Free: Zero advance payment required. Pay only after verified courier reaches your doorstep.</span>
+              </div>
             </div>
           </div>
         </div>
