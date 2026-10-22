@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, hashPassword, verifyPassword, signJwtToken } from "@/lib/auth";
 
 export async function POST(req: Request) {
   try {
@@ -9,12 +9,15 @@ export async function POST(req: Request) {
     const {
       addressId,
       customAddress,
+      email,
+      password,
       paymentMethod = "COD",
       couponCode,
       items: directItems,
     } = body;
 
     let customerId = user?.id;
+    let userToAuthenticate: any = null;
 
     // Resolve address
     let deliveryAddressSnapshot = "";
@@ -26,6 +29,7 @@ export async function POST(req: Request) {
         deliveryAddressSnapshot = JSON.stringify({
           fullName: address.fullName,
           phone: address.phone,
+          email: user.email,
           pincode: address.pincode,
           addressLine1: address.addressLine1,
           addressLine2: address.addressLine2,
@@ -43,7 +47,10 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       }
-      deliveryAddressSnapshot = JSON.stringify(customAddress);
+      deliveryAddressSnapshot = JSON.stringify({
+        ...customAddress,
+        email: email || customAddress.email || user?.email,
+      });
 
       // If user is logged in, optionally save address for future
       if (user && customAddress.saveAddress) {
@@ -68,33 +75,80 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Valid delivery address is required" }, { status: 400 });
     }
 
-    // Resolve items from cart if not direct buy
-    let rawItems = directItems;
-    if (!rawItems || rawItems.length === 0) {
-      if (!user) {
-        return NextResponse.json({ error: "Cart is empty" }, { status: 400 });
-      }
-      const cartItems = await prisma.cartItem.findMany({
-        where: { userId: user.id },
-        include: { product: true, variant: true },
-      });
-      if (cartItems.length === 0) {
-        return NextResponse.json({ error: "Cart is empty" }, { status: 400 });
-      }
-      rawItems = cartItems.map((c) => ({
-        productId: c.productId,
-        variantId: c.variantId,
-        quantity: c.quantity,
-      }));
-    }
-
-    // If user is not logged in and placed guest order, create or link a guest customer record
+    // Account creation & linking if not already logged in
     if (!customerId) {
       const parsedAddr = JSON.parse(deliveryAddressSnapshot);
-      const guestEmail = parsedAddr.email || `guest_${Date.now()}@mojicart.in`;
-      let guestUser = await prisma.user.findFirst({ where: { email: guestEmail } });
-      if (!guestUser) {
-        guestUser = await prisma.user.create({
+      const customerEmail = (email || customAddress?.email || parsedAddr.email || "").toLowerCase().trim();
+      const customerPassword = (password || customAddress?.password || "").trim();
+
+      if (customerEmail) {
+        let existingUser = await prisma.user.findFirst({ where: { email: customerEmail } });
+        if (existingUser) {
+          if (existingUser.passwordHash === "GUEST_CHECKOUT" && customerPassword) {
+            existingUser = await prisma.user.update({
+              where: { id: existingUser.id },
+              data: {
+                passwordHash: await hashPassword(customerPassword),
+                name: parsedAddr.fullName || existingUser.name,
+                phone: parsedAddr.phone || existingUser.phone,
+              },
+            });
+            userToAuthenticate = existingUser;
+          } else if (customerPassword && existingUser.passwordHash !== "GUEST_CHECKOUT") {
+            const isMatch = await verifyPassword(customerPassword, existingUser.passwordHash);
+            if (!isMatch) {
+              return NextResponse.json(
+                { error: "An account with this email already exists. Please enter your correct password or log in." },
+                { status: 401 }
+              );
+            }
+            userToAuthenticate = existingUser;
+          } else {
+            userToAuthenticate = existingUser;
+          }
+          customerId = existingUser.id;
+        } else {
+          // Create brand new customer account
+          const passwordHash = customerPassword
+            ? await hashPassword(customerPassword)
+            : await hashPassword("Moji@" + Math.random().toString(36).slice(-8));
+
+          const newUser = await prisma.user.create({
+            data: {
+              name: parsedAddr.fullName || "Customer",
+              email: customerEmail,
+              phone: parsedAddr.phone,
+              passwordHash,
+              role: "CUSTOMER",
+              status: "ACTIVE",
+            },
+          });
+          customerId = newUser.id;
+          userToAuthenticate = newUser;
+        }
+
+        // Save address in their address book if new user
+        if (userToAuthenticate && customAddress) {
+          try {
+            await prisma.address.create({
+              data: {
+                userId: userToAuthenticate.id,
+                fullName: customAddress.fullName,
+                phone: customAddress.phone,
+                pincode: customAddress.pincode,
+                addressLine1: customAddress.addressLine1,
+                addressLine2: customAddress.addressLine2 || null,
+                city: customAddress.city,
+                state: customAddress.state,
+                addressType: customAddress.addressType || "HOME",
+                isDefault: true,
+              },
+            });
+          } catch {}
+        }
+      } else {
+        const guestEmail = `guest_${Date.now()}@mojicart.in`;
+        const guestUser = await prisma.user.create({
           data: {
             name: parsedAddr.fullName || "Guest Customer",
             email: guestEmail,
@@ -104,8 +158,30 @@ export async function POST(req: Request) {
             status: "ACTIVE",
           },
         });
+        customerId = guestUser.id;
       }
-      customerId = guestUser.id;
+    }
+
+    // Resolve items from cart if not direct buy
+    let rawItems = directItems;
+    if (!rawItems || rawItems.length === 0) {
+      if (customerId) {
+        const cartItems = await prisma.cartItem.findMany({
+          where: { userId: customerId },
+          include: { product: true, variant: true },
+        });
+        if (cartItems.length > 0) {
+          rawItems = cartItems.map((c) => ({
+            productId: c.productId,
+            variantId: c.variantId,
+            quantity: c.quantity,
+          }));
+        }
+      }
+    }
+
+    if (!rawItems || rawItems.length === 0) {
+      return NextResponse.json({ error: "Your cart is empty" }, { status: 400 });
     }
 
     // Server-side validation of stock and prices in database transaction
@@ -290,17 +366,26 @@ export async function POST(req: Request) {
       });
 
       // Clear customer's cart
-      if (user) {
+      const activeUserId = user?.id || userToAuthenticate?.id;
+      if (activeUserId) {
         await tx.cartItem.deleteMany({
-          where: { userId: user.id },
+          where: { userId: activeUserId },
         });
       }
 
       return order;
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
+      authenticated: !!userToAuthenticate,
+      user: userToAuthenticate
+        ? {
+            id: userToAuthenticate.id,
+            email: userToAuthenticate.email,
+            name: userToAuthenticate.name,
+          }
+        : null,
       order: {
         id: orderResult.id,
         orderNumber: orderResult.orderNumber,
@@ -313,6 +398,25 @@ export async function POST(req: Request) {
         itemsCount: orderResult.items.length,
       },
     }, { status: 201 });
+
+    if (userToAuthenticate) {
+      const token = signJwtToken({
+        userId: userToAuthenticate.id,
+        email: userToAuthenticate.email,
+        name: userToAuthenticate.name,
+        role: userToAuthenticate.role,
+      });
+
+      response.cookies.set("mojicart_token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60,
+        path: "/",
+      });
+    }
+
+    return response;
   } catch (error: any) {
     console.error("Checkout error:", error);
     return NextResponse.json(

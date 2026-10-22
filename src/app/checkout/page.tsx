@@ -14,6 +14,10 @@ import {
   Loader2,
   Lock,
   ArrowRight,
+  Eye,
+  EyeOff,
+  UserCheck,
+  Mail,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
@@ -23,7 +27,7 @@ function CheckoutContent() {
   const searchParams = useSearchParams();
   const couponFromQuery = searchParams.get("coupon") || "";
 
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, refreshUser } = useAuth();
   const { items, subtotal, shippingFee, finalTotal, clearCart } = useCart();
 
   // Address State
@@ -42,6 +46,11 @@ function CheckoutContent() {
     saveAddress: true,
   });
 
+  // Account / Login Credentials State for checkout
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
   // Payment Method
   const [paymentMethod, setPaymentMethod] = useState("COD");
   const [couponCode, setCouponCode] = useState(couponFromQuery);
@@ -58,6 +67,9 @@ function CheckoutContent() {
       setSelectedAddressId(def.id);
     } else {
       setUseCustomAddress(true);
+    }
+    if (user?.email) {
+      setEmail(user.email);
     }
   }, [user]);
 
@@ -90,12 +102,22 @@ function CheckoutContent() {
       const payload: any = {
         paymentMethod,
         couponCode: couponCode || null,
+        email: email.trim(),
+        password: password.trim(),
+        items: items.map((it) => ({
+          productId: it.productId,
+          variantId: it.variantId || null,
+          quantity: it.quantity,
+        })),
       };
 
       if (!useCustomAddress && selectedAddressId) {
         payload.addressId = selectedAddressId;
       } else {
-        payload.customAddress = customAddress;
+        payload.customAddress = {
+          ...customAddress,
+          email: email.trim(),
+        };
       }
 
       const res = await fetch("/api/v1/checkout", {
@@ -110,6 +132,11 @@ function CheckoutContent() {
       }
 
       await clearCart();
+      if (data.authenticated) {
+        try {
+          await refreshUser();
+        } catch {}
+      }
       setOrderSuccess(data.order);
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to process order. Please try again.");
@@ -132,6 +159,11 @@ function CheckoutContent() {
           Your order{" "}
           <span className="font-bold text-slate-950">{orderSuccess.orderNumber}</span> has been
           placed and is now being packed by the seller.
+          {email && (
+            <span className="block mt-2.5 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 py-2 px-3 rounded-xl max-w-md mx-auto">
+              ✓ Registered as <strong>{email}</strong>! You can log in anytime with your password to view real-time delivery status & tracking.
+            </span>
+          )}
         </p>
 
         <div className="bg-white rounded-2xl border border-slate-200 p-6 text-left shadow-sm space-y-3 mb-6 text-xs">
@@ -225,16 +257,90 @@ function CheckoutContent() {
       <form onSubmit={handlePlaceOrder} className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Left Column: Address & Payment (8 cols) */}
         <div className="lg:col-span-8 space-y-6">
-          {/* Step 1: Delivery Address */}
+          {/* Step 1: Delivery Address & Account */}
           <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
               <h2 className="font-black text-sm uppercase tracking-wide text-slate-900 flex items-center gap-2">
                 <span className="w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs">
                   1
                 </span>
-                <span>Select Delivery Address</span>
+                <span>Delivery Address & Account</span>
               </h2>
             </div>
+
+            {/* User Account Login / Registration State */}
+            {user ? (
+              <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs flex items-center justify-between text-emerald-800">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Signed in as <strong>{user.name}</strong> ({user.email})</span>
+                </div>
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
+                  Orders will be saved to your account
+                </span>
+              </div>
+            ) : (
+              <div className="mb-5 p-4 bg-gradient-to-r from-amber-50 to-orange-50/40 border border-amber-200/80 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span className="font-bold text-xs text-slate-900">Account & Login Credentials</span>
+                  </div>
+                  <Link href="/login?redirect=/checkout" className="text-[11px] font-bold text-amber-600 hover:underline">
+                    Already have an account? Sign In
+                  </Link>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">
+                      Email Address *
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="email"
+                        required
+                        placeholder="e.g. priya@gmail.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg p-2.5 bg-white pr-9 focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                      />
+                      <Mail className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">Order tracking and updates will be sent here.</p>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1 flex items-center justify-between">
+                      <span>Set Account Password *</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="text-[10px] font-bold text-amber-600 hover:underline flex items-center gap-0.5"
+                      >
+                        {showPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                        {showPassword ? "Hide" : "Show"}
+                      </button>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        required
+                        placeholder="Create a password (min 6 chars)"
+                        minLength={6}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg p-2.5 bg-white pr-9 focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                      />
+                      <Lock className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+                    </div>
+                    <p className="text-[10px] text-emerald-700 font-medium mt-1">
+                      ✓ Login anytime with this email & password to check order status.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Saved Addresses List */}
             {user && user.addresses && user.addresses.length > 0 && !useCustomAddress && (
