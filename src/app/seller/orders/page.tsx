@@ -132,8 +132,13 @@ export default function SellerOrdersPage() {
 
                       <td className="p-4">
                         <span className="font-bold text-slate-900 block">{addr.fullName || o.customer?.name}</span>
-                        <span className="text-[11px] text-slate-500">
-                          {addr.city}, {addr.pincode}
+                        {(addr.phone || o.customer?.phone) && (
+                          <span className="text-[11px] text-amber-700 font-mono block">
+                            📱 {addr.phone || o.customer?.phone}
+                          </span>
+                        )}
+                        <span className="text-[11px] text-slate-600 block">
+                          {[addr.addressLine1, addr.city, addr.state, addr.pincode].filter(Boolean).join(", ")}
                         </span>
                       </td>
 
@@ -216,7 +221,34 @@ export default function SellerOrdersPage() {
               <button onClick={() => setSelectedOrder(null)} className="text-slate-400 p-1">
                 <X className="w-5 h-5" />
               </button>
-            </div>
+            {(() => {
+              let mAddr: any = {};
+              try {
+                if (selectedOrder.deliveryAddress) {
+                  mAddr = typeof selectedOrder.deliveryAddress === "string" ? JSON.parse(selectedOrder.deliveryAddress) : selectedOrder.deliveryAddress;
+                }
+              } catch {}
+              return (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 text-xs space-y-1">
+                  <p className="font-bold text-slate-800">
+                    Ship To: {mAddr.fullName || selectedOrder.customer?.name}
+                  </p>
+                  {(mAddr.phone || selectedOrder.customer?.phone) && (
+                    <p className="text-slate-600 font-mono text-[11px]">
+                      Phone: {mAddr.phone || selectedOrder.customer?.phone}
+                    </p>
+                  )}
+                  <p className="text-slate-600 text-[11px] leading-relaxed">
+                    {mAddr.addressLine1 || "Standard Delivery"}
+                    {mAddr.addressLine2 ? `, ${mAddr.addressLine2}` : ""}
+                    {mAddr.landmark ? ` (Near ${mAddr.landmark})` : ""}
+                  </p>
+                  <p className="font-semibold text-slate-800 text-[11px]">
+                    {[mAddr.city, mAddr.state, mAddr.pincode].filter(Boolean).join(", ")}
+                  </p>
+                </div>
+              );
+            })()}
 
             <form onSubmit={handleUpdateStatus} className="space-y-4 text-xs">
               <div>

@@ -102,13 +102,20 @@ export default function AdminOrdersPage() {
     }
   };
 
+  const parseAddress = (raw: any) => {
+    if (!raw) return {};
+    if (typeof raw === "object") return raw;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return { addressLine1: String(raw) };
+    }
+  };
+
   const filtered = orders.filter((o) => {
     if (statusFilter !== "ALL" && o.orderStatus !== statusFilter) return false;
 
-    let addr: any = {};
-    try {
-      if (o.deliveryAddress) addr = JSON.parse(o.deliveryAddress);
-    } catch {}
+    const addr = parseAddress(o.deliveryAddress);
 
     const searchTarget = [
       o.orderNumber,
@@ -121,6 +128,7 @@ export default function AdminOrdersPage() {
       addr.city,
       addr.state,
       addr.pincode,
+      addr.addressLine1,
       o.trackingNumber,
     ]
       .filter(Boolean)
@@ -132,12 +140,7 @@ export default function AdminOrdersPage() {
   });
 
   // Parse active order delivery address
-  let activeAddress: any = null;
-  if (activeOrder?.deliveryAddress) {
-    try {
-      activeAddress = JSON.parse(activeOrder.deliveryAddress);
-    } catch {}
-  }
+  const activeAddress = parseAddress(activeOrder?.deliveryAddress);
 
   return (
     <div className="space-y-6">
@@ -209,15 +212,16 @@ export default function AdminOrdersPage() {
                 </tr>
               ) : (
                 filtered.map((ord) => {
-                  let addr: any = {};
-                  try {
-                    if (ord.deliveryAddress) addr = JSON.parse(ord.deliveryAddress);
-                  } catch {}
-
+                  const addr = parseAddress(ord.deliveryAddress);
                   const customerName = addr.fullName || ord.customer?.name || "Customer";
                   const customerPhone = addr.phone || ord.customer?.phone || "No phone";
                   const customerEmail = addr.email || ord.customer?.email || "No email";
-                  const destination = addr.city && addr.state ? `${addr.city}, ${addr.state} (${addr.pincode})` : "Standard Delivery";
+                  const destination =
+                    addr.city && addr.state
+                      ? `${addr.city}, ${addr.state} (${addr.pincode || ""})`
+                      : addr.addressLine1
+                      ? addr.addressLine1
+                      : "Standard Delivery";
 
                   return (
                     <tr key={ord.id} className="hover:bg-slate-900/50 transition">
