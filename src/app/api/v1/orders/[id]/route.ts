@@ -8,10 +8,6 @@ export async function GET(
 ) {
   try {
     const user = await getSessionUser(req);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { id } = await params;
 
     const order = await prisma.order.findFirst({
@@ -40,6 +36,15 @@ export async function GET(
 
     if (!order) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    }
+
+    // If not logged in, allow tracking only if querying by exact orderNumber
+    if (!user) {
+      if (order.orderNumber !== id && order.id !== id) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      // Return tracking view for guests
+      return NextResponse.json({ order });
     }
 
     // Role check: Admin can view all. Customer only view own. Seller only view if they have items.
@@ -74,8 +79,14 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = await params;
-    const { status, comment, trackingNumber, shippingCarrier } = await req.json();
+    const {
+      status,
+      comment,
+      trackingNumber,
+      shippingCarrier,
+      paymentStatus,
+      estimatedDeliveryDate,
+    } = await req.json();
 
     const order = await prisma.order.findUnique({
       where: { id },
@@ -93,7 +104,7 @@ export async function PATCH(
 
     // Customer can only request cancellation if order is not yet shipped
     if (isOrderCustomer && !isSuperOrOps && !isOrderSeller) {
-      if (status !== "CANCELLED") {
+      if (status && status !== "CANCELLED") {
         return NextResponse.json({ error: "Customers can only cancel eligible orders" }, { status: 403 });
       }
       if (["SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED"].includes(order.orderStatus)) {
@@ -102,6 +113,8 @@ export async function PATCH(
     } else if (!isSuperOrOps && !isOrderSeller) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    const targetStatus = status || order.orderStatus;
 
     const validStatuses = [
       "PENDING",
@@ -115,25 +128,25 @@ export async function PATCH(
       "RETURNED",
     ];
 
-    if (!validStatuses.includes(status)) {
+    if (status && !validStatuses.includes(status)) {
       return NextResponse.json({ error: `Invalid status: ${status}` }, { status: 400 });
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      const updateData: any = {
-        orderStatus: status,
-      };
-
-      if (trackingNumber) updateData.trackingNumber = trackingNumber;
-      if (shippingCarrier) updateData.shippingCarrier = shippingCarrier;
+      const updateData: any = {};
+      if (status) updateData.orderStatus = status;
+      if (trackingNumber !== undefined) updateData.trackingNumber = trackingNumber;
+      if (shippingCarrier !== undefined) updateData.shippingCarrier = shippingCarrier;
+      if (paymentStatus) updateData.paymentStatus = paymentStatus;
+      if (estimatedDeliveryDate) updateData.estimatedDeliveryDate = new Date(estimatedDeliveryDate);
 
       // If delivered, mark payment as PAID if it was COD
-      if (status === "DELIVERED" && order.paymentMethod === "COD") {
+      if (targetStatus === "DELIVERED" && order.paymentMethod === "COD") {
         updateData.paymentStatus = "PAID";
       }
 
       // If cancelled, restore stock!
-      if (status === "CANCELLED" && order.orderStatus !== "CANCELLED") {
+      if (targetStatus === "CANCELLED" && order.orderStatus !== "CANCELLED") {
         for (const item of order.items) {
           if (item.variantId) {
             await tx.productVariant.update({
@@ -164,17 +177,34 @@ export async function PATCH(
       const res = await tx.order.update({
         where: { id },
         data: updateData,
-      });
-
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId: order.id,
-          fromStatus: order.orderStatus,
-          toStatus: status,
-          changedByUserId: user.id,
-          comment: comment || `Status updated to ${status} by ${user.name} (${user.role})`,
+        include: {
+          customer: true,
+          items: true,
+          statusHistory: { orderBy: { createdAt: "desc" } },
         },
       });
+
+      if (status && status !== order.orderStatus) {
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: order.id,
+            fromStatus: order.orderStatus,
+            toStatus: status,
+            changedByUserId: user.id,
+            comment: comment || `Status updated to ${status} by ${user.name} (${user.role})`,
+          },
+        });
+      } else if (comment || trackingNumber || shippingCarrier) {
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: order.id,
+            fromStatus: order.orderStatus,
+            toStatus: order.orderStatus,
+            changedByUserId: user.id,
+            comment: comment || `Logistics updated: Carrier ${shippingCarrier || order.shippingCarrier || "Courier"}, AWB #${trackingNumber || order.trackingNumber || "N/A"}`,
+          },
+        });
+      }
 
       return res;
     });
